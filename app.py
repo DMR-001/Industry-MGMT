@@ -70,12 +70,22 @@ def main():
     def load_data():
         processor = DataProcessor()
         
-        # Try to load user's CSV data first
-        possible_paths = [
+        # First check for uploaded data
+        uploaded_path = "data/temp_uploaded.csv"
+        if os.path.exists(uploaded_path):
+            try:
+                return processor.load_data(uploaded_path)
+            except Exception as e:
+                st.warning(f"Could not load uploaded data: {str(e)}")
+        
+        # Try to load steel industry data (multiple possible names)
+        steel_data_paths = [
             "data/steel_industry_data.csv",
+            "data/Steel_industry_data.csv",
+            "data/steel_data.csv"
         ]
         
-        for path in possible_paths:
+        for path in steel_data_paths:
             if os.path.exists(path):
                 try:
                     if path.endswith('.xlsx'):
@@ -89,7 +99,15 @@ def main():
                     st.warning(f"Could not load {path}: {str(e)}")
                     continue
         
-        # Fallback to generated sample data
+        # Fallback to industrial energy data (has similar features)
+        industrial_path = "data/industrial_energy_data.csv"
+        if os.path.exists(industrial_path):
+            try:
+                return processor.load_data(industrial_path)
+            except Exception as e:
+                st.warning(f"Could not load {industrial_path}: {str(e)}")
+        
+        # Final fallback to generated sample data
         data_path = "data/energy_data.csv"
         if not os.path.exists(data_path):
             st.info("Generating sample energy consumption data...")
@@ -128,23 +146,36 @@ def show_data_overview(df, processor, visualizer):
     
     if uploaded_file is not None:
         try:
-            # Save uploaded file
+            # Process uploaded file immediately
             if uploaded_file.name.endswith('.xlsx'):
-                df_new = pd.read_excel(uploaded_file)
-                df_new.to_csv("data/uploaded_data.csv", index=False)
+                df_uploaded = pd.read_excel(uploaded_file)
             else:
-                df_new = pd.read_csv(uploaded_file)
-                df_new.to_csv("data/uploaded_data.csv", index=False)
+                df_uploaded = pd.read_csv(uploaded_file)
             
             st.success(f"✅ Successfully uploaded {uploaded_file.name}")
-            st.info("Please refresh the page to use the new data")
             
-            # Show preview of uploaded data
-            st.subheader("Data Preview")
-            st.dataframe(df_new.head())
+            # Process the uploaded data with data processor
+            processor_upload = DataProcessor()
+            
+            # Save temporarily and process
+            temp_path = "data/temp_uploaded.csv"
+            df_uploaded.to_csv(temp_path, index=False)
+            df = processor_upload.load_data(temp_path)
+            
+            st.info("🔄 Using your uploaded data for analysis")
+            
+            # Show preview of processed data
+            st.subheader("📊 Processed Data Preview")
+            st.dataframe(df.head())
+            
+            # Show column information
+            st.subheader("📋 Detected Columns")
+            col_info = f"Found {len(df.columns)} columns: {', '.join(df.columns)}"
+            st.info(col_info)
             
         except Exception as e:
             st.error(f"Error processing file: {str(e)}")
+            st.error(f"Error details: {type(e).__name__}")
     
     # Data metrics
     col1, col2, col3, col4 = st.columns(4)
@@ -186,13 +217,38 @@ def show_data_overview(df, processor, visualizer):
     # Steel Industry specific visualizations
     st.subheader("🏭 Steel Industry Analytics")
     
-    # Check if we have steel industry data
+    # Check if we have steel industry data (flexible detection)
     steel_columns = ['Power_Factor', 'CO2_tCO2', 'Reactive_Power_kVarh', 'Load_Type', 'Week_Status']
-    available_steel_cols = [col for col in steel_columns if col in df.columns]
+    # Also check for variations and original column names
+    all_possible_industrial_cols = steel_columns + [
+        'Leading_Power_Factor', 'NSM', 'Leading_Reactive_Power_kVarh',
+        'CO2', 'Equipment_Load', 'Operating_Mode',  # from industrial_energy_data
+        # Original steel industry column names (before processing)
+        'Lagging_Current_Power_Factor', 'Leading_Current_Power_Factor',
+        'Lagging_Current_Reactive_Power_kVarh', 'Leading_Current_Reactive_Power_kVarh',
+        'Lagging_Current_Reactive.Power_kVarh', 'Leading_Current_Reactive.Power_kVarh',
+        'CO2(CO2)', 'CO2(tCO2)', 'WeekStatus', 'Day_of_week'
+    ]
+    
+    available_steel_cols = [col for col in all_possible_industrial_cols if col in df.columns]
+    
+    # Debug information
+    st.write(f"🔍 **Debug Info**: Available columns in dataset: {list(df.columns)}")
+    st.write(f"🔍 **Debug Info**: Detected industrial columns: {available_steel_cols}")
     
     if len(available_steel_cols) == 0:
-        st.info("No steel industry specific columns detected. This might be synthetic data.")
+        st.info("🔧 Using synthetic energy data. For steel industry features, upload your steel_industry_data.csv file.")
+        # Still show some basic analytics even with synthetic data
+        st.subheader("📊 Basic Energy Analytics")
+        
+        # Show basic distribution
+        if 'Usage_kWh' in df.columns:
+            fig = visualizer.plot_distribution(df['Usage_kWh'])
+            st.plotly_chart(fig, use_container_width=True)
+        
         return
+    
+    st.success(f"✅ Detected {len(available_steel_cols)} industrial columns: {', '.join(available_steel_cols[:3])}{'...' if len(available_steel_cols) > 3 else ''}")
     
     # Power Factor Analysis
     if 'Power_Factor' in df.columns:
@@ -213,19 +269,25 @@ def show_data_overview(df, processor, visualizer):
                 fig = visualizer.plot_distribution(df['NSM'])
                 st.plotly_chart(fig, use_container_width=True)
     
-    # CO2 Emissions Analysis
-    if 'CO2_tCO2' in df.columns and 'Usage_kWh' in df.columns:
+    # CO2 Emissions Analysis (flexible column detection)
+    co2_column = None
+    if 'CO2_tCO2' in df.columns:
+        co2_column = 'CO2_tCO2'
+    elif 'CO2' in df.columns:
+        co2_column = 'CO2'
+    
+    if co2_column and 'Usage_kWh' in df.columns:
         st.subheader("CO2 Emissions Analysis")
         col1, col2 = st.columns(2)
         with col1:
-            fig = visualizer.plot_distribution(df['CO2_tCO2'])
+            fig = visualizer.plot_distribution(df[co2_column])
             st.plotly_chart(fig, use_container_width=True)
         with col2:
             # Show CO2 vs Energy relationship
             import plotly.express as px
-            fig = px.scatter(df, x='Usage_kWh', y='CO2_tCO2', 
+            fig = px.scatter(df, x='Usage_kWh', y=co2_column, 
                            title='Energy vs CO2 Emissions',
-                           labels={'Usage_kWh': 'Energy Usage (kWh)', 'CO2_tCO2': 'CO2 (tCO2)'},
+                           labels={'Usage_kWh': 'Energy Usage (kWh)', co2_column: 'CO2 Emissions'},
                            opacity=0.6)
             st.plotly_chart(fig, use_container_width=True)
     
@@ -249,20 +311,34 @@ def show_data_overview(df, processor, visualizer):
             fig = visualizer.plot_distribution(df[available_reactive[0]])
             st.plotly_chart(fig, use_container_width=True)
     
-    # Load Type Distribution
+    # Load/Equipment Analysis (flexible detection)
+    load_column = None
     if 'Load_Type' in df.columns:
-        st.subheader("Load Type Distribution")
-        load_counts = df['Load_Type'].value_counts()
+        load_column = 'Load_Type'
+        title = "Load Type Distribution"
+    elif 'Operating_Mode' in df.columns:
+        load_column = 'Operating_Mode'
+        title = "Operating Mode Distribution"
+    
+    if load_column:
+        st.subheader(title)
+        load_counts = df[load_column].value_counts()
         import plotly.express as px
         fig = px.pie(values=load_counts.values, names=load_counts.index,
-                    title='Distribution of Load Types',
+                    title=title,
                     color_discrete_sequence=px.colors.qualitative.Set3)
         st.plotly_chart(fig, use_container_width=True)
         
-        # Show load type statistics
-        st.subheader("Load Type Statistics")
-        load_stats = df.groupby('Load_Type')['Usage_kWh'].agg(['count', 'mean', 'std', 'min', 'max']).round(2)
+        # Show statistics
+        st.subheader(f"{load_column} Statistics")
+        load_stats = df.groupby(load_column)['Usage_kWh'].agg(['count', 'mean', 'std', 'min', 'max']).round(2)
         st.dataframe(load_stats)
+    
+    # Equipment Load Analysis (if available)
+    if 'Equipment_Load' in df.columns:
+        st.subheader("Equipment Load Analysis")
+        fig = visualizer.plot_distribution(df['Equipment_Load'])
+        st.plotly_chart(fig, use_container_width=True)
     
     # Week Status Analysis
     if 'Week_Status' in df.columns and 'Usage_kWh' in df.columns:

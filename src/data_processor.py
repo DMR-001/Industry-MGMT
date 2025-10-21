@@ -95,12 +95,16 @@ class DataProcessor:
             # Standardize column names for steel industry data
             column_mapping = {
                 'Lagging_Current_Reactive.Power_kVarh': 'Reactive_Power_kVarh',
-                'Leading_Current_Reactive.Power_kVarh': 'Leading_Reactive_Power_kVarh',
+                'Lagging_Current_Reactive_Power_kVarh': 'Reactive_Power_kVarh',
+                'Leading_Current_Reactive.Power_kVarh': 'Leading_Reactive_Power_kVarh', 
+                'Leading_Current_Reactive_Power_kVarh': 'Leading_Reactive_Power_kVarh',
                 'CO2(CO2)': 'CO2_tCO2',
+                'CO2(tCO2)': 'CO2_tCO2',
                 'Lagging_Current_Power_Factor': 'Power_Factor',
                 'Leading_Current_Power_Factor': 'Leading_Power_Factor',
                 'WeekStatus': 'Week_Status',
-                'Day_of_week': 'Day_of_Week'
+                'Day_of_week': 'Day_of_Week',
+                'Day_of_Week': 'Day_of_Week'
                 # Keep Usage_kWh, Load_Type, NSM as they are
             }
             

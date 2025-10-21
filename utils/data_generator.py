@@ -148,6 +148,11 @@ def generate_industrial_energy_data(output_path, n_days=365):
         if np.random.random() < 0.01:
             usage *= np.random.uniform(2.0, 3.0)  # Extreme high usage
         
+        # Generate steel industry-like features for better compatibility
+        power_factor = np.random.uniform(0.7, 0.95)  # Typical industrial power factor
+        co2_emission = usage * np.random.uniform(0.4, 0.6)  # CO2 per kWh
+        reactive_power = usage * power_factor * np.random.uniform(0.2, 0.4)
+        
         data.append({
             'Date': date.strftime('%Y-%m-%d'),
             'Usage_kWh': round(usage, 2),
@@ -156,7 +161,13 @@ def generate_industrial_energy_data(output_path, n_days=365):
             'Operating_Mode': mode,
             'Day_of_Week': day_of_week,
             'Month': date.month,
-            'Equipment_Load': round(equipment_load, 2)
+            'Equipment_Load': round(equipment_load, 2),
+            # Steel industry compatible columns
+            'Power_Factor': round(power_factor, 3),
+            'CO2': round(co2_emission, 2),
+            'Reactive_Power_kVarh': round(reactive_power, 2),
+            'Load_Type': mode.replace('_', ' ').title(),
+            'Week_Status': 'Weekend' if date.weekday() >= 5 else 'Weekday'
         })
     
     df = pd.DataFrame(data)
